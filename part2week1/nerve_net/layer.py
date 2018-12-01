@@ -25,35 +25,36 @@ def time_meter(func):
 
 
 class NerveLayer(object):
-    def __init__(self, node_num, pre_layer, linear_dict, activation_dict, zero_layer=False, output=None, keep_prob=1.0):
-        self.node_num = node_num
-        self.pre_layer = pre_layer
-        self.next_layer = None
-        self.index = (pre_layer.index + 1) if pre_layer else 0
-        self.output = output
-        self.is_zero = zero_layer
+    def __init__(self, node_num, pre_layer, linear_dict, activation_dict, input_layer=False, output_layer=False, output=None, keep_prob=1.0):
+        self.node_num = node_num        # 神经元个数
+        self.pre_layer = pre_layer      # 上一层
+        self.next_layer = None          # 下一层
+        self.index = (pre_layer.index + 1) if pre_layer else 0  # 此层的索引，input层为0
+        self.is_input = input_layer     # 是否为输入层
+        self.is_output = output_layer   # 是否为输入层
         self.w = None
         self.b = None
         self.dw = None
         self.db = None
-        self.init_params()
-        self.liner_forward, self.liner_backward = self.init_linear_func(linear_dict)
-        self.activation_forward, self.activation_backward = self.init_activation_func(activation_dict)
-        self.intermediate = dict()
-        self.keep_prob = keep_prob
+        self.init_params()              # 初始化"w, b, dw, db"
+        self.liner_forward, self.liner_backward = self.init_linear_func(linear_dict)    # 线性函数
+        self.activation_forward, self.activation_backward = self.init_activation_func(activation_dict)  # 激活函数
+        self.output = output            # 经神经元计算后的输出数据
+        self.intermediate = dict()      # 缓存中间值
+        self.keep_prob = keep_prob      # dropout参数
 
     def init_linear_func(self, linear_dict):
-        if self.is_zero:
+        if self.is_input:
             return None, None
         return linear_dict['forward'], linear_dict['backward']
 
     def init_activation_func(self, activation_dict):
-        if self.is_zero:
+        if self.is_input:
             return None, None
         return activation_dict['forward'], activation_dict['backward']
 
     def init_params(self):
-        if self.is_zero:
+        if self.is_input:
             return
         pre_layer_node_num = self.pre_layer.node_num
         np.random.seed(5)
@@ -79,18 +80,18 @@ class NerveLayer(object):
         return info
 
 
-class ZeroLayer(NerveLayer):
+class InputLayer(NerveLayer):
     """
     zero layer(input layer)
     """
 
     def __init__(self, input_data):
-        super(ZeroLayer, self).__init__(input_data.shape[0], None, None, None, zero_layer=True, output=input_data)
+        super(InputLayer, self).__init__(input_data.shape[0], None, None, None, input_layer=True, output=input_data)
 
 
 class OutputLayer(NerveLayer):
     """
-    out put layer
+    output layer
     """
 
     def __init__(self, pre_layer):
@@ -100,7 +101,7 @@ class OutputLayer(NerveLayer):
 
         :param pre_layer: previous layer, in the beginning pre_layer is input_layer;
         """
-        super(OutputLayer, self).__init__(1, pre_layer, LINEAR['linear'], ACTIVATION['sigmoid'], False, None)
+        super(OutputLayer, self).__init__(1, pre_layer, LINEAR['linear'], ACTIVATION['sigmoid'], input_layer=False,output_layer=True)
 
     def update_after_add(self):
         """
@@ -115,7 +116,7 @@ class OutputLayer(NerveLayer):
 class NerveNetwork(object):
     def __init__(self, train_x_set, train_y_set):
         self.__labels = train_y_set
-        self.__header = ZeroLayer(train_x_set)
+        self.__header = InputLayer(train_x_set)
         self.__tail = OutputLayer(self.__header)
         self.__header.next_layer = self.__tail
         self.__layer_num = 1
@@ -153,7 +154,8 @@ class NerveNetwork(object):
         while curr_layer is not None:
             z = curr_layer.liner_forward(curr_layer.pre_layer.output, curr_layer.w, curr_layer.b)
             a = curr_layer.activation_forward(z)
-            if curr_layer.next_layer is not None and curr_layer.keep_prob != 1.0:
+            if not curr_layer.is_output and curr_layer.keep_prob != 1.0:
+                # dropout处理
                 d = np.random.rand(a.shape[0], a.shape[1])
                 d = d < curr_layer.keep_prob
                 a *= d
@@ -191,27 +193,32 @@ class NerveNetwork(object):
         # backward from pre output_layer
         curr_layer = self.__tail
         da = None
-        while not curr_layer.is_zero:
-            d = curr_layer.intermediate.get('d')
-            if not curr_layer.next_layer:
+        while not curr_layer.is_input:
+            d = curr_layer.intermediate.get('d')    # dropout参数矩阵
+            # 1. 计算dz
+            if curr_layer.is_output:
                 dz = (a - y)/m
             else:
                 if d:
+                    # 反向dropout
                     da *= d
                     da /= curr_layer.keep_prob
                 dz = curr_layer.activation_backward(da, curr_layer.output)
+            # 2. 计算dw, db
             x = curr_layer.pre_layer.output
             dw, db = curr_layer.liner_backward(dz, x)
+            # 3. 是否正则化防止过拟合
             if regular:
                 regular_effect = (lambd / m) * curr_layer.w
                 dw += regular_effect
+            # 4. 更新参数dw, db
             curr_layer.dw = dw
             curr_layer.db = db
 
             # this judge is very important, if not, it will task a lot of time;
             # When close to input layer, the params matrix are often vary large(means take a lot of time),
             # and update this param "da" is useless;
-            if not curr_layer.pre_layer.is_zero:
+            if not curr_layer.pre_layer.is_input:
                 da = np.dot(curr_layer.w.T, dz)     # update da
             curr_layer = curr_layer.pre_layer
 
