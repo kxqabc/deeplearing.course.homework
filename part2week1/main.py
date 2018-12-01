@@ -3,11 +3,22 @@
 
 import matplotlib.pyplot as plt
 
-from utils.init_utils import load_dataset
+from utils.reg_utils import load_2D_dataset
+from nerve_net.layer import NerveNetwork
+from nerve_net.linear import LINEAR
+from nerve_net.activation import ACTIVATION
 
 if __name__ == '__main__':
-    train_X, train_Y, test_X, test_Y = load_dataset(is_plot=False)
+    train_X, train_Y, test_X, test_Y = load_2D_dataset(is_plot=True)
     print train_X.shape
     print train_Y.shape
-    plt.plot(train_X[0, :], train_X[1, :])
-    plt.show()
+    nerve_network = NerveNetwork(train_X, train_Y)
+    nerve_network.add_layer(20, LINEAR['linear'], ACTIVATION['relu'])
+    nerve_network.add_layer(3, LINEAR['linear'], ACTIVATION['relu'])
+    iteration_num = 2000
+    learning_rate = 0.01
+    lambd = 0.7
+    cost_list = nerve_network.regression(iteration_num, learning_rate, regular=True, lambd=lambd)
+    print "cost: %s" % str(cost_list)
+    predicts = nerve_network.predict(test_X)
+    nerve_network.cal_accuracy(predicts, test_Y)
