@@ -8,6 +8,7 @@ from nerve_net.layer import NerveNetwork
 from nerve_net.linear import LINEAR
 from nerve_net.activation import ACTIVATION
 
+
 if __name__ == '__main__':
     train_X, train_Y, test_X, test_Y = load_2D_dataset(is_plot=False)
     print train_X.shape
@@ -25,6 +26,7 @@ if __name__ == '__main__':
     predicts = nerve_network.predict(test_X)
     nerve_network.cal_accuracy(predicts, test_Y)
     print "####################不使用正则化########################"
+    nerve_network.format_params()   # 格式化神经网络
     cost_list_without = nerve_network.regression(iteration_num, learning_rate)
     print "cost: %s" % str(cost_list_without)
     predicts = nerve_network.predict(test_X)

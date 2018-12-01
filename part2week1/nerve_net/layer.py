@@ -60,6 +60,8 @@ class NerveLayer(object):
         # self.w = np.random.randn(self.node_num, pre_layer_node_num) * 0.01
         # self.w = np.zeros((self.node_num, pre_layer_node_num))
         self.b = np.zeros((self.node_num, 1))
+        self.dw = np.zeros(self.w.shape)
+        self.db = np.zeros(self.b.shape)
 
     def update_params(self, learning_rate=0.01):
         self.w -= learning_rate * self.dw
@@ -111,25 +113,34 @@ class OutputLayer(NerveLayer):
 
 class NerveNetwork(object):
     def __init__(self, train_x_set, train_y_set):
-        self.labels = train_y_set
-        self.header = ZeroLayer(train_x_set)
-        self.tail = OutputLayer(self.header)
-        self.header.next_layer = self.tail
-        self.layer_num = 1
+        self.__labels = train_y_set
+        self.__header = ZeroLayer(train_x_set)
+        self.__tail = OutputLayer(self.__header)
+        self.__header.next_layer = self.__tail
+        self.__layer_num = 1
 
     def add_layer(self, node_num, liner_dict, activation_dict):
-        pre_layer = self.tail.pre_layer
+        pre_layer = self.__tail.pre_layer
         new_layer = NerveLayer(node_num, pre_layer, liner_dict, activation_dict)
-        new_layer.next_layer = self.tail
+        new_layer.next_layer = self.__tail
         pre_layer.next_layer = new_layer
-        self.tail.pre_layer = new_layer
+        self.__tail.pre_layer = new_layer
         # update output_layer's params like: w, b, index
-        self.tail.update_after_add()
-        self.layer_num += 1
-        return self.tail
+        self.__tail.update_after_add()
+        self.__layer_num += 1
+        return self.__tail
 
-    def erase_params(self):
-        curr_layer = self.header.next_layer
+    def format_params(self, input_data=None):
+        """
+        格式化神经网络的参数，恢复为初始状态
+        :param input_data: 格式化的输入数据，格式化参数时会参考输入数据的shape，
+        如果不为None，说明重新设置训练数据，不仅参数会发生变化，参数的shape也可能会变化；
+        :return:
+        """
+        if input_data:
+            self.__header.output = input_data
+            self.__header.node_num = input_data.shape[0]
+        curr_layer = self.__header.next_layer
         while curr_layer is not None:
             curr_layer.init_params()
             self.output = None
@@ -137,7 +148,7 @@ class NerveNetwork(object):
             curr_layer = curr_layer.next_layer
 
     def forward(self):
-        curr_layer = self.header.next_layer
+        curr_layer = self.__header.next_layer
         while curr_layer is not None:
             z = curr_layer.liner_forward(curr_layer.pre_layer.output, curr_layer.w, curr_layer.b)
             a = curr_layer.activation_forward(z)
@@ -146,13 +157,13 @@ class NerveNetwork(object):
             curr_layer = curr_layer.next_layer
 
     def cal_cost(self, a, regular=False, lambd=1.0):
-        y = self.labels
+        y = self.__labels
         m = float(y.shape[1])
         print "shape of output: %s, labels: %s" % (str(a.shape), str(y.shape))
         cost = -np.sum(np.dot(y, np.log(a).T) + np.dot(1.0 - y, np.log(1.0 - a).T)) / m
         if regular:
             # 计算正则化误差
-            curr_layer = self.header.next_layer
+            curr_layer = self.__header.next_layer
             regular_cost = 0.0
             while curr_layer is not None:
                 regular_cost += np.sum(np.square(curr_layer.w))
@@ -162,18 +173,18 @@ class NerveNetwork(object):
         return cost
 
     def update_params(self, learning_rate):
-        curr_layer = self.header.next_layer
+        curr_layer = self.__header.next_layer
         while curr_layer is not None:
             curr_layer.update_params(learning_rate=learning_rate)
             curr_layer = curr_layer.next_layer
 
     def backward(self, regular=False, lambd=1.0):
         # calculate output_layer's dz and da
-        y = self.labels
-        a = self.tail.output
+        y = self.__labels
+        a = self.__tail.output
         m = float(y.shape[1])
         # backward from pre output_layer
-        curr_layer = self.tail
+        curr_layer = self.__tail
         da = None
         while not curr_layer.is_zero:
             if not curr_layer.next_layer:
@@ -201,7 +212,7 @@ class NerveNetwork(object):
         for i in range(iteration_num):
             self.forward()
             if i % 100 == 0:
-                cost_list.append(self.cal_cost(self.tail.output, regular=regular, lambd=lambd))
+                cost_list.append(self.cal_cost(self.__tail.output, regular=regular, lambd=lambd))
             self.backward(regular=regular, lambd=lambd)
             self.update_params(learning_rate)
         return cost_list
@@ -215,9 +226,18 @@ class NerveNetwork(object):
             curr_layer = curr_layer.next_layer
 
     def predict(self, x_set):
-        self.header.output = x_set
-        self.forward()
-        return np.round(self.tail.output)
+        """
+        与forward不同的是，predict最好不要影响神经网络的参数：output, cache等
+        :param x_set: 输入数据集
+        :return: 预测结果列表, shape = (1, item_num)
+        """
+        curr_layer = self.__header.next_layer
+        a = x_set
+        while curr_layer is not None:
+            z = curr_layer.liner_forward(a, curr_layer.w, curr_layer.b)
+            a = curr_layer.activation_forward(z)
+            curr_layer = curr_layer.next_layer
+        return np.round(a)
 
     @staticmethod
     def cal_accuracy(predicts, labels):
@@ -227,8 +247,8 @@ class NerveNetwork(object):
         return accuracy
 
     def __str__(self):
-        curr_layer = self.header.next_layer
-        info = "There are %d layers in this network.\n" % self.layer_num
+        curr_layer = self.__header.next_layer
+        info = "There are %d layers in this network.\n" % self.__layer_num
         while curr_layer is not None:
             info += "############# Layer ################\n"
             info += str(curr_layer)
