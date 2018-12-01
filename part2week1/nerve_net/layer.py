@@ -25,7 +25,7 @@ def time_meter(func):
 
 
 class NerveLayer(object):
-    def __init__(self, node_num, pre_layer, linear_dict, activation_dict, zero_layer=False, output=None):
+    def __init__(self, node_num, pre_layer, linear_dict, activation_dict, zero_layer=False, output=None, keep_prob=1.0):
         self.node_num = node_num
         self.pre_layer = pre_layer
         self.next_layer = None
@@ -40,6 +40,7 @@ class NerveLayer(object):
         self.liner_forward, self.liner_backward = self.init_linear_func(linear_dict)
         self.activation_forward, self.activation_backward = self.init_activation_func(activation_dict)
         self.intermediate = dict()
+        self.keep_prob = keep_prob
 
     def init_linear_func(self, linear_dict):
         if self.is_zero:
@@ -119,9 +120,9 @@ class NerveNetwork(object):
         self.__header.next_layer = self.__tail
         self.__layer_num = 1
 
-    def add_layer(self, node_num, liner_dict, activation_dict):
+    def add_layer(self, node_num, liner_dict, activation_dict, keep_prob=1.0):
         pre_layer = self.__tail.pre_layer
-        new_layer = NerveLayer(node_num, pre_layer, liner_dict, activation_dict)
+        new_layer = NerveLayer(node_num, pre_layer, liner_dict, activation_dict, keep_prob=keep_prob)
         new_layer.next_layer = self.__tail
         pre_layer.next_layer = new_layer
         self.__tail.pre_layer = new_layer
@@ -152,6 +153,11 @@ class NerveNetwork(object):
         while curr_layer is not None:
             z = curr_layer.liner_forward(curr_layer.pre_layer.output, curr_layer.w, curr_layer.b)
             a = curr_layer.activation_forward(z)
+            if curr_layer.next_layer is not None and curr_layer.keep_prob != 1.0:
+                d = np.random.rand(a.shape[0], a.shape[1])
+                d = d < curr_layer.keep_prob
+                a *= d
+                a /= curr_layer.keep_prob
             curr_layer.intermediate['z'] = z
             curr_layer.output = a
             curr_layer = curr_layer.next_layer
@@ -159,7 +165,6 @@ class NerveNetwork(object):
     def cal_cost(self, a, regular=False, lambd=1.0):
         y = self.__labels
         m = float(y.shape[1])
-        print "shape of output: %s, labels: %s" % (str(a.shape), str(y.shape))
         cost = -np.sum(np.dot(y, np.log(a).T) + np.dot(1.0 - y, np.log(1.0 - a).T)) / m
         if regular:
             # 计算正则化误差
@@ -187,9 +192,13 @@ class NerveNetwork(object):
         curr_layer = self.__tail
         da = None
         while not curr_layer.is_zero:
+            d = curr_layer.intermediate.get('d')
             if not curr_layer.next_layer:
                 dz = (a - y)/m
             else:
+                if d:
+                    da *= d
+                    da /= curr_layer.keep_prob
                 dz = curr_layer.activation_backward(da, curr_layer.output)
             x = curr_layer.pre_layer.output
             dw, db = curr_layer.liner_backward(dz, x)
