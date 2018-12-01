@@ -128,6 +128,14 @@ class NerveNetwork(object):
         self.layer_num += 1
         return self.tail
 
+    def erase_params(self):
+        curr_layer = self.header.next_layer
+        while curr_layer is not None:
+            curr_layer.init_params()
+            self.output = None
+            self.intermediate = dict()
+            curr_layer = curr_layer.next_layer
+
     def forward(self):
         curr_layer = self.header.next_layer
         while curr_layer is not None:
@@ -140,14 +148,17 @@ class NerveNetwork(object):
     def cal_cost(self, a, regular=False, lambd=1.0):
         y = self.labels
         m = float(y.shape[1])
-        regular_cost = 0.0
+        print "shape of output: %s, labels: %s" % (str(a.shape), str(y.shape))
+        cost = -np.sum(np.dot(y, np.log(a).T) + np.dot(1.0 - y, np.log(1.0 - a).T)) / m
         if regular:
             # 计算正则化误差
             curr_layer = self.header.next_layer
+            regular_cost = 0.0
             while curr_layer is not None:
                 regular_cost += np.sum(np.square(curr_layer.w))
+                curr_layer = curr_layer.next_layer
             regular_cost = lambd * regular_cost / (2 * m)
-        cost = -np.sum(np.dot(y, np.log(a).T) + np.dot(1.0 - y, np.log(1.0 - a).T)) / m + regular_cost
+            cost += regular_cost
         return cost
 
     def update_params(self, learning_rate):
